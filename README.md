@@ -1,3 +1,4 @@
+
 <div align="right">
   <details>
     <summary >🌐 Language</summary>
@@ -23,129 +24,202 @@
         | <a href="https://openaitx.github.io/view.html?user=icip-cas&project=PPTAgent&lang=tr">Türkçe</a>
         | <a href="https://openaitx.github.io/view.html?user=icip-cas&project=PPTAgent&lang=vi">Tiếng Việt</a>
         | <a href="https://openaitx.github.io/view.html?user=icip-cas&project=PPTAgent&lang=id">Bahasa Indonesia</a>
-        | <a href="https://openaitx.github.io/view.html?user=icip-cas&project=PPTAgent&lang=as">অসমীয়া</
+        | <a href="https://openaitx.github.io/view.html?user=icip-cas&project=PPTAgent&lang=as">অসমীয়া</a>
       </div>
     </div>
   </details>
 </div>
 
-# PPTAgent: Generating and Evaluating Presentations Beyond Text-to-Slides
-<p align="center">
-  📄 <a href="https://arxiv.org/abs/2501.03936" target="_blank">Paper</a> &nbsp; | &nbsp;
-  🤗 <a href="#open-source-" target="_blank">OpenSource</a> &nbsp; | &nbsp;
-  📝 <a href="./DOC.md" target="_blank">Documentation</a> &nbsp; | &nbsp;
-  <a href="https://deepwiki.com/icip-cas/PPTAgent" target="_blank"><img src="https://deepwiki.com/icon.png" alt="Ask DeepWiki"> DeepWiki</a> &nbsp; | &nbsp;
-  🙏 <a href="#citation-" target="_blank">Citation</a>
-</p>
+<div align="center">
+  <img src="resource/pptagent-logo.png" width="240px">
+</div>
 
-We present PPTAgent, an innovative system that automatically generates presentations from documents. Drawing inspiration from human presentation creation methods, our system employs a two-step process to ensure excellence in overall quality. Additionally, we introduce **PPTEval**, a comprehensive evaluation framework that assesses presentations across multiple dimensions.
+https://github.com/user-attachments/assets/938889e8-d7d8-4f4f-b2a1-07ee3ef3991a
 
-> [!TIP]
-> 🚀 Get started quickly with our pre-built Docker image - [See Docker instructions](DOC.md/#docker-)
+## 📫 Contact
+> The main contributor of this repo is a Master's student graduating in 2026, currently on the job market. Feel free to reach out for collaboration or job opportunities.
+>
+> 本仓库的主要贡献者是一名 2026 届硕士毕业生，正在求职中，欢迎联系。
+
+<div align="center">
+  <img src="resource/wechat.jpg" width="140px">
+</div>
 
 ## 📅 News
-
-- [2025/09]: 🛠️ We support MCP server now, see [MCP Server](./DOC.md#mcp-server-) for details
+- [2025/12]: 🔥 Released V2 with major improvements - Deep Research Integration, Free-Form Visual Design, Autonomous Asset Creation, Text-to-Image Generation, and Agent Environment with sandbox & 20+ tools. Both freeform and template generation support PPTX export.
+- [2025/09]: 🛠️ MCP server support added - see [MCP Server](./DOC.md#mcp-server-) for configuration details
 - [2025/09]: 🚀 Released v2 with major improvements - see [release notes](https://github.com/icip-cas/PPTAgent/releases/tag/v0.2.0) for details
 - [2025/08]: 🎉 Paper accepted to **EMNLP 2025**!
 - [2025/05]: ✨ Released v1 with core functionality and 🌟 breakthrough: reached 1,000 stars on GitHub! - see [release notes](https://github.com/icip-cas/PPTAgent/releases/tag/v0.1.0) for details
 - [2025/01]: 🔓 Open-sourced the codebase, with experimental code archived at [experiment release](https://github.com/icip-cas/PPTAgent/releases/tag/experiment)
 
-## Open Source 🤗
-We have released our model and data at [HuggingFace](https://huggingface.co/collections/ICIP/pptagent-68b80af43b4f4e0cb14d0bb2).
+## 📖 Usage
 
-## Demo Video 🎥
+> [!IMPORTANT]
+> 1. All these API keys, configurations, and services are **required**.
+> 2. Agent Backbone Recommendation: Use Claude for the Research Agent and Gemini for the Design Agent. GLM-4.7 is also a good choice in open-source models.
+> 3. We do not support offline serving for now.
 
-https://github.com/user-attachments/assets/c3935a98-4d2b-4c46-9b36-e7c598d14863
+### 1. Prepare external services
 
-## Distinctive Features ✨
+- **MinerU**: Apply for an API key at https://mineru.net/apiManage/docs. Note that each key is valid for 14 days.
+- **Tavily**: Apply for an API key at https://www.tavily.com/.
+- **LLM**: Copy `deeppresenter/deeppresenter/config.yaml.example` to `deeppresenter/deeppresenter/config.yaml`, then set your model endpoint, API keys, and related parameters.
 
-- **Dynamic Content Generation**: Creates slides with seamlessly integrated text and images
-- **Smart Reference Learning**: Leverages existing presentations without requiring manual annotation
-- **Comprehensive Quality Assessment**: Evaluates presentations through multiple quality metrics
+### 2. Set up agent environment & MCP
 
-## Case Study 💡
+- **Agent sandbox (Docker)**: Build the sandbox image using the provided [Dockerfile](deeppresenter/docker/Dockerfile):
 
-- #### [Iphone 16 Pro](https://www.apple.com/iphone-16-pro/)
+  ```bash
+  bash deeppresenter/docker/build.sh
+  ```
+
+- **MCP server**: Copy `deeppresenter/deeppresenter/mcp.json.example` to `deeppresenter/deeppresenter/mcp.json`, then configure the MCP server.
+- **Additional tools**:
+
+  ```bash
+  pip install playwright
+  playwright install-deps
+  playwright install chromium
+  npm install
+  npx playwright install chromium
+  ```
+
+### 3. Install Python dependencies
+
+From the project root directory, run:
+
+```bash
+pip install -e deeppresenter
+```
+
+### 4. Launch the web demo
+
+Also from the project root directory, run:
+
+```bash
+python webui.py
+```
+
+> [!TIP]
+> 🚀 All configurable variables can be found in [constants.py](deeppresenter/deeppresenter/utils/constants.py).
+
+## 💡 Case Study
+
+- #### Prompt: Please present the given document to me.
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px;">
 
-  <img src="resource/iphone16pro/0001.jpg" alt="图片1" width="200"/>
+  <img src="resource/v2/manuscript/0001.jpg" alt="图片1" width="200"/>
 
-  <img src="resource/iphone16pro/0002.jpg" alt="图片2" width="200"/>
+  <img src="resource/v2/manuscript/0002.jpg" alt="图片2" width="200"/>
 
-  <img src="resource/iphone16pro/0003.jpg" alt="图片3" width="200"/>
+  <img src="resource/v2/manuscript/0003.jpg" alt="图片3" width="200"/>
 
-  <img src="resource/iphone16pro/0004.jpg" alt="图片4" width="200"/>
+  <img src="resource/v2/manuscript/0004.jpg" alt="图片4" width="200"/>
 
-  <img src="resource/iphone16pro/0005.jpg" alt="图片5" width="200"/>
+  <img src="resource/v2/manuscript/0005.jpg" alt="图片5" width="200"/>
 
-  <img src="resource/iphone16pro/0006.jpg" alt="图片6" width="200"/>
+  <img src="resource/v2/manuscript/0006.jpg" alt="图片6" width="200"/>
 
-  <img src="resource/iphone16pro/0007.jpg" alt="图片7" width="200"/>
+  <img src="resource/v2/manuscript/0007.jpg" alt="图片7" width="200"/>
+
+  <img src="resource/v2/manuscript/0008.jpg" alt="图片8" width="200"/>
+
+  <img src="resource/v2/manuscript/0009.jpg" alt="图片9" width="200"/>
+
+  <img src="resource/v2/manuscript/0010.jpg" alt="图片10" width="200"/>
 
 </div>
 
-- #### [Build Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- #### Prompt: 请介绍小米 SU7 的外观和价格
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px;">
 
-  <img src="resource/build_effective_agents/0001.jpg" alt="图片1" width="200"/>
+  <img src="resource/v2/presentation1/0001.jpg" alt="图片1" width="200"/>
 
-  <img src="resource/build_effective_agents/0002.jpg" alt="图片2" width="200"/>
+  <img src="resource/v2/presentation1/0002.jpg" alt="图片2" width="200"/>
 
-  <img src="resource/build_effective_agents/0003.jpg" alt="图片3" width="200"/>
+  <img src="resource/v2/presentation1/0003.jpg" alt="图片3" width="200"/>
 
-  <img src="resource/build_effective_agents/0004.jpg" alt="图片4" width="200"/>
+  <img src="resource/v2/presentation1/0004.jpg" alt="图片4" width="200"/>
 
-  <img src="resource/build_effective_agents/0005.jpg" alt="图片5" width="200"/>
+  <img src="resource/v2/presentation1/0005.jpg" alt="图片5" width="200"/>
 
-  <img src="resource/build_effective_agents/0006.jpg" alt="图片6" width="200"/>
-
-  <img src="resource/build_effective_agents/0007.jpg" alt="图片7" width="200"/>
-
-  <img src="resource/build_effective_agents/0008.jpg" alt="图片8" width="200"/>
-
-<img src="resource/build_effective_agents/0009.jpg" alt="图片9" width="200"/>
-
-<img src="resource/build_effective_agents/0010.jpg" alt="图片10" width="200"/>
+  <img src="resource/v2/presentation1/0006.jpg" alt="图片6" width="200"/>
 
 </div>
 
-## PPTAgent 🤖
+- #### Prompt: 请制作一份高中课堂展示课件，主题为“解码立法过程：理解其对国际关系的影响”
 
-PPTAgent follows a two-phase approach:
-1. **Analysis Phase**: Extracts and learns from patterns in reference presentations
-2. **Generation Phase**: Develops structured outlines and produces visually cohesive slides
+<div style="display: flex; flex-wrap: wrap; gap: 10px;">
 
-Our system's workflow is illustrated below:
+  <img src="resource/v2/presentation2/0001.jpg" alt="图片1" width="200"/>
+
+  <img src="resource/v2/presentation2/0002.jpg" alt="图片2" width="200"/>
+
+  <img src="resource/v2/presentation2/0003.jpg" alt="图片3" width="200"/>
+
+  <img src="resource/v2/presentation2/0004.jpg" alt="图片4" width="200"/>
+
+  <img src="resource/v2/presentation2/0005.jpg" alt="图片5" width="200"/>
+
+  <img src="resource/v2/presentation2/0006.jpg" alt="图片6" width="200"/>
+
+  <img src="resource/v2/presentation2/0007.jpg" alt="图片7" width="200"/>
+
+  <img src="resource/v2/presentation2/0008.jpg" alt="图片8" width="200"/>
+
+  <img src="resource/v2/presentation2/0009.jpg" alt="图片9" width="200"/>
+
+  <img src="resource/v2/presentation2/0010.jpg" alt="图片10" width="200"/>
+
+  <img src="resource/v2/presentation2/0011.jpg" alt="图片11" width="200"/>
+
+  <img src="resource/v2/presentation2/0012.jpg" alt="图片12" width="200"/>
+
+  <img src="resource/v2/presentation2/0013.jpg" alt="图片13" width="200"/>
+
+  <img src="resource/v2/presentation2/0014.jpg" alt="图片14" width="200"/>
+
+  <img src="resource/v2/presentation2/0015.jpg" alt="图片15" width="200"/>
+
+</div>
+
+---
 
 
-![PPTAgent Workflow](resource/fig2.jpg)
-
-## PPTEval ⚖️
-
-PPTEval evaluates presentations across three dimensions:
-- **Content**: Check the accuracy and relevance of the slides.
-- **Design**: Assesses the visual appeal and consistency.
-- **Coherence**: Ensures the logical flow of ideas.
-
-The workflow of PPTEval is shown below:
-<p align="center">
-<img src="resource/fig3.jpg" alt="PPTEval Workflow" style="width:70%;"/>
-</p>
-
+[![Star History Chart](https://api.star-history.com/svg?repos=icip-cas/PPTAgent&type=Date)](https://star-history.com/#icip-cas/PPTAgent&Date)
 
 ## Citation 🙏
 
 If you find this project helpful, please use the following to cite it:
 ```bibtex
-@article{zheng2025pptagent,
-  title={PPTAgent: Generating and Evaluating Presentations Beyond Text-to-Slides},
-  author={Zheng, Hao and Guan, Xinyan and Kong, Hao and Zheng, Jia and Zhou, Weixiang and Lin, Hongyu and Lu, Yaojie and He, Ben and Han, Xianpei and Sun, Le},
-  journal={arXiv preprint arXiv:2501.03936},
-  year={2025}
+@inproceedings{zheng-etal-2025-pptagent,
+    title = "{PPTA}gent: Generating and Evaluating Presentations Beyond Text-to-Slides",
+    author = "Zheng, Hao  and
+      Guan, Xinyan  and
+      Kong, Hao  and
+      Zhang, Wenkai  and
+      Zheng, Jia  and
+      Zhou, Weixiang  and
+      Lin, Hongyu  and
+      Lu, Yaojie  and
+      Han, Xianpei  and
+      Sun, Le",
+    editor = "Christodoulopoulos, Christos  and
+      Chakraborty, Tanmoy  and
+      Rose, Carolyn  and
+      Peng, Violet",
+    booktitle = "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2025",
+    address = "Suzhou, China",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2025.emnlp-main.728/",
+    doi = "10.18653/v1/2025.emnlp-main.728",
+    pages = "14413--14429",
+    ISBN = "979-8-89176-332-6",
+    abstract = "Automatically generating presentations from documents is a challenging task that requires accommodating content quality, visual appeal, and structural coherence. Existing methods primarily focus on improving and evaluating the content quality in isolation, overlooking visual appeal and structural coherence, which limits their practical applicability. To address these limitations, we propose PPTAgent, which comprehensively improves presentation generation through a two-stage, edit-based approach inspired by human workflows. PPTAgent first analyzes reference presentations to extract slide-level functional types and content schemas, then drafts an outline and iteratively generates editing actions based on selected reference slides to create new slides. To comprehensively evaluate the quality of generated presentations, we further introduce PPTEval, an evaluation framework that assesses presentations across three dimensions: Content, Design, and Coherence. Results demonstrate that PPTAgent significantly outperforms existing automatic presentation generation methods across all three dimensions."
 }
 ```
-
-[![Star History Chart](https://api.star-history.com/svg?repos=icip-cas/PPTAgent&type=Date)](https://star-history.com/#icip-cas/PPTAgent&Date)

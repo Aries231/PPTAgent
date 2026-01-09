@@ -1,6 +1,4 @@
 __pycache__
-olddata
-data
 tmp
 build
 *ipynb
@@ -11,10 +9,9 @@ oaib.txt
 *egg-info
 .yarn
 runs
-Makefile
 node_modules
-human_eval
-resource/
+CLAUDE.md
+AGENTS.md
 
 # Copy from vuejs
 
@@ -42,3 +39,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+deeppresenter/deeppresenter/config.yaml
+deeppresenter/deeppresenter/mcp.json
