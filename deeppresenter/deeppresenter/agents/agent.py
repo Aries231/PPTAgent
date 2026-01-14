@@ -115,13 +115,6 @@ class Agent:
         if language not in role_config.system:
             raise ValueError(f"Language '{language}' not found in system prompts")
         self.system = role_config.system[language]
-        if not allow_reflection:
-            self.system = re.sub(
-                r"<REFLECTION>.*?</REFLECTION>", "", self.system, flags=re.DOTALL
-            )
-            self.tools = [
-                t for t in self.tools if not t["function"]["name"].startswith("inspect")
-            ]
 
         # ? for those agents equipped with sandbox only
         if any(t["function"]["name"] == "execute_command" for t in self.tools):
@@ -131,8 +124,8 @@ class Agent:
                 time=datetime.now().strftime("%Y-%m-%d"),
             )
 
-        if config.offline_mode:
-            self.system += OFFLINE_PROMPT
+            if config.offline_mode:
+                self.system += OFFLINE_PROMPT
 
         self.chat_history: list[ChatMessage] = [
             ChatMessage(role=Role.SYSTEM, content=self.system)
