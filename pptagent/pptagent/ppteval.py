@@ -9,11 +9,10 @@ from tqdm.asyncio import tqdm
 
 from .model_utils import ModelManager
 from .presentation import Presentation
-from .utils import Config, package_join, ppt_to_images_async
+from .utils import Config, package_join, ppt_to_images
 
-manager = ModelManager()
-language_model = manager.language_model
-vision_model = manager.vision_model
+language_model = None
+vision_model = None
 
 text_scorer = Template(
     open(
@@ -112,7 +111,7 @@ async def eval_coherence(prs_source: str):
 async def eval_ppt(prs_source: str):
     slide_folder = prs_source.replace(".pptx", "")
     if not exists(slide_folder):
-        await ppt_to_images_async(prs_source, slide_folder)
+        await ppt_to_images(prs_source, slide_folder)
     await eval_coherence(prs_source)
     await eval_slide(prs_source, slide_folder)
     return get_eval(prs_source)[0]
@@ -166,3 +165,9 @@ async def eval_parsed_ppts(prs_files: list[str], slide_folders: list[str]):
         print(f"Overall: {overall_avg:.2f}")
 
     return avg_scores
+
+
+if __name__ == "__main__":
+    manager = ModelManager()
+    language_model = manager.language_model
+    vision_model = manager.vision_model

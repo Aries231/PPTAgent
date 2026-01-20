@@ -8,12 +8,11 @@ from typing import Literal
 
 from appcore import mcp
 from mcp.types import ImageContent
-from mistune import html as markdown_to_html
 from pptagent.model_utils import _get_lid_model
-from pptagent.utils import get_html_table_image, ppt_to_images
+from pptagent.utils import ppt_to_images
 
 from deeppresenter.utils.config import DeepPresenterConfig
-from deeppresenter.utils.critic import slide_oversight
+from deeppresenter.utils.log import error
 from deeppresenter.utils.webview import convert_html_to_pptx
 
 LID_MODEL = _get_lid_model()
@@ -21,82 +20,43 @@ LLM_CONFIG = DeepPresenterConfig.load_from_file(os.getenv("LLM_CONFIG_FILE"))
 
 
 @mcp.tool()
-def markdown_table_to_image(markdown_table: str, path: str, css: str) -> str:
-    """
-    Convert a markdown table to an image and save it to the specified path.
-
-    Args:
-        markdown_table (str): The markdown table content to convert
-        path (str): The file path where the image will be saved
-        css (str): Custom CSS styles for the table. Use class selectors
-                            (table, thead, th, td) to style the table elements. Avoid
-                            changing background colors outside the table area.
-
-    Returns:
-        str: Confirmation message with the path to the saved image
-    """
-    html = markdown_to_html(markdown_table)
-    get_html_table_image(html, path, css)
-    return f"Markdown table converted to image and saved to {path}"
-
-
-ASPECT_RATIO_MAPPING = {
-    "16:9": "widescreen",
-    "4:3": "normal",
-}
-
-
-@mcp.tool()
 async def inspect_slide(
     html_file: str,
-    aspect_ratio: Literal["widescreen", "normal", "A1", "16:9", "4:3"] = "widescreen",
+    aspect_ratio: Literal["16:9", "4:3", "A1"] = "16:9",
 ) -> ImageContent | str:
     """
     Read the HTML file as an image.
-
-    Args:
-        html_file (str): The path to the HTML file
-        aspect_ratio (Literal["widescreen", "normal", "A1"]): The slide aspect ratio
 
     Returns:
         ImageContent: The slide as an image content
         str: Error message if inspection fails
     """
-    if aspect_ratio in ASPECT_RATIO_MAPPING:
-        aspect_ratio = ASPECT_RATIO_MAPPING[aspect_ratio]
     html_path = Path(html_file).absolute()
     if not (html_path.exists() and html_path.suffix == ".html"):
         return f"HTML path {html_path} does not exist or is not an HTML file"
-    if aspect_ratio not in ["widescreen", "normal", "A1"]:
-        return "aspect_ratio should be one of 'widescreen', 'normal', 'A1'"
     try:
-        pptx_path = convert_html_to_pptx(html_path, aspect_ratio=aspect_ratio)
+        pptx_path = await convert_html_to_pptx(html_path, aspect_ratio=aspect_ratio)
+    except Exception as e:
+        return e
+
+    if LLM_CONFIG.design_agent.is_multimodal:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_dir = Path(tmp_dir)
-            ppt_to_images(str(pptx_path), str(output_dir))
+            await ppt_to_images(str(pptx_path), str(output_dir))
             image_path = output_dir / "slide_0001.jpg"
+            if not image_path.exists():
+                error(f"Image not found: {image_path}")
             image_data = image_path.read_bytes()
         base64_data = (
             f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
         )
-
-        if LLM_CONFIG.design_agent.is_multimodal:
-            return ImageContent(
-                type="image",
-                data=base64_data,
-                mimeType="image/jpeg",
-            )
-        elif LLM_CONFIG.critic_agent is not None:
-            critic = await slide_oversight(
-                LLM_CONFIG.critic_agent,
-                base64_data,
-                html_path.read_text(encoding="utf-8"),
-            )
-            return critic.content
-        else:
-            return "This slide looks good with no apparent quality issues."
-    except Exception as e:
-        return e
+        return ImageContent(
+            type="image",
+            data=base64_data,
+            mimeType="image/jpeg",
+        )
+    else:
+        return "This slide looks good."
 
 
 @mcp.tool()

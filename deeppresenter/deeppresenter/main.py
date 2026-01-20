@@ -1,4 +1,5 @@
 import json
+import traceback
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -54,7 +55,7 @@ class AgentLoop:
             ChatMessage or str: Messages or final output path.
         """
         if not self.config.design_agent.is_multimodal and allow_reflection:
-            warning(
+            debug(
                 "Reflective design requires a multimodal LLM in the design agent, reflection will only enable on Research Agent."
             )
         if check_llms:
@@ -87,8 +88,11 @@ class AgentLoop:
                         break
                     yield msg
             except Exception as e:
-                error_message = f"Research agent failed with error: {e}"
+                error_message = (
+                    f"Research agent failed with error: {e}\n{traceback.format_exc()}"
+                )
                 error(error_message)
+                error(traceback.format_exc())
                 yield ChatMessage(role=Role.SYSTEM, content=error_message)
                 raise e
             finally:
@@ -114,8 +118,11 @@ class AgentLoop:
                             break
                         yield msg
                 except Exception as e:
-                    error_message = f"PPTAgent failed with error: {e}"
+                    error_message = (
+                        f"PPTAgent failed with error: {e}\n{traceback.format_exc()}"
+                    )
                     error(error_message)
+                    error(traceback.format_exc())
                     yield ChatMessage(role=Role.SYSTEM, content=error_message)
                     raise e
                 finally:
@@ -139,8 +146,11 @@ class AgentLoop:
                             break
                         yield msg
                 except Exception as e:
-                    error_message = f"Design agent failed with error: {e}"
+                    error_message = (
+                        f"Design agent failed with error: {e}\n{traceback.format_exc()}"
+                    )
                     error(error_message)
+                    error(traceback.format_exc())
                     yield ChatMessage(role=Role.SYSTEM, content=error_message)
                     raise e
                 finally:
@@ -149,21 +159,25 @@ class AgentLoop:
                 pptx_path = self.workspace / f"{md_file.stem}.pptx"
                 try:
                     # ? this feature is in experimental stage
-                    convert_html_to_pptx(
+                    await convert_html_to_pptx(
                         slide_html_dir,
                         pptx_path,
-                        aspect_ratio=request.aspect_ratio,
+                        aspect_ratio=request.powerpoint_type,
                     )
                 except Exception as e:
                     warning(
                         f"html2pptx conversion failed, falling back to pdf conversion\n{e}"
                     )
                     pptx_path = pptx_path.with_suffix(".pdf")
+                    (self.workspace / ".html2pptx-error.txt").write_text(
+                        str(e) + "\n" + traceback.format_exc()
+                    )
+                finally:
                     async with PlaywrightConverter() as pc:
-                        pc.convert_to_pdf(
-                            slide_html_dir,
-                            pptx_path,
-                            aspect_ratio=request.aspect_ratio,
+                        await pc.convert_to_pdf(
+                            list(slide_html_dir.glob("*.html")),
+                            pptx_path.with_suffix(".pdf"),
+                            aspect_ratio=request.powerpoint_type,
                         )
 
                 self.intermediate_output["final"] = str(pptx_path)

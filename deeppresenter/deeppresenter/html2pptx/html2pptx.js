@@ -13,7 +13,7 @@
  *
  * FEATURES:
  *   - Converts HTML to PowerPoint with accurate positioning
- *   - Supports text, images, shapes, and bullet lists
+ *   - Supports text, images, shapes, tables, and bullet lists
  *   - Extracts placeholder elements (class="placeholder") with positions
  *   - Handles CSS gradients, borders, and margins
  *
@@ -212,6 +212,41 @@ async function rasterizeGradients(page, slideData, bodyDimensions, tmpDir) {
     return filePath;
   };
 
+  const renderSvg = async (svgMarkup, widthPx, heightPx, leftPx = 0, topPx = 0) => {
+    const id = makeId();
+    await page.evaluate(({ id, svgMarkup, widthPx, heightPx, leftPx, topPx }) => {
+      const container = document.createElement('div');
+      container.id = id;
+      container.style.position = 'fixed';
+      container.style.left = `${leftPx}px`;
+      container.style.top = `${topPx}px`;
+      container.style.width = `${widthPx}px`;
+      container.style.height = `${heightPx}px`;
+      container.style.pointerEvents = 'none';
+      container.style.zIndex = '2147483647';
+      container.innerHTML = svgMarkup;
+      document.body.appendChild(container);
+
+      const svg = container.querySelector('svg');
+      if (svg) {
+        svg.setAttribute('width', `${widthPx}px`);
+        svg.setAttribute('height', `${heightPx}px`);
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.display = 'block';
+      }
+    }, { id, svgMarkup, widthPx, heightPx, leftPx, topPx });
+
+    const handle = await page.$(`#${id}`);
+    const filePath = makePath();
+    await handle.screenshot({ path: filePath, omitBackground: true });
+    await page.evaluate((id) => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }, id);
+    return filePath;
+  };
+
   if (slideData.background && slideData.background.type === 'css') {
     const filePath = await renderBackground(
       slideData.background.style || {},
@@ -246,10 +281,12 @@ async function rasterizeGradients(page, slideData, bodyDimensions, tmpDir) {
       el.src = filePath;
       delete el.style;
     } else if (el.type === 'image' && el.style) {
+      const isSvgImage = typeof el.src === 'string'
+        && (el.src.toLowerCase().endsWith('.svg') || el.src.startsWith('data:image/svg'));
       const objectFit = el.style.objectFit || 'fill';
       const objectPosition = el.style.objectPosition || '50% 50%';
       const borderRadius = el.style.borderRadius;
-      const shouldRender = objectFit !== 'fill' || objectPosition !== '50% 50%' || borderRadius;
+      const shouldRender = isSvgImage || objectFit !== 'fill' || objectPosition !== '50% 50%' || borderRadius;
       if (shouldRender) {
         const widthPx = Math.round(el.position.w * PX_PER_IN);
         const heightPx = Math.round(el.position.h * PX_PER_IN);
@@ -259,6 +296,15 @@ async function rasterizeGradients(page, slideData, bodyDimensions, tmpDir) {
         el.src = filePath;
       }
       delete el.style;
+    } else if (el.type === 'svg') {
+      const widthPx = Math.round(el.position.w * PX_PER_IN);
+      const heightPx = Math.round(el.position.h * PX_PER_IN);
+      const leftPx = Math.round(el.position.x * PX_PER_IN);
+      const topPx = Math.round(el.position.y * PX_PER_IN);
+      const filePath = await renderSvg(el.svg, widthPx, heightPx, leftPx, topPx);
+      el.type = 'image';
+      el.src = filePath;
+      delete el.svg;
     } else if (el.type === 'gradient') {
       const widthPx = Math.round(el.position.w * PX_PER_IN);
       const heightPx = Math.round(el.position.h * PX_PER_IN);
@@ -338,6 +384,22 @@ function addElements(slideData, targetSlide, pres) {
       };
       if (el.style.margin) listOptions.margin = el.style.margin;
       targetSlide.addText(el.items, listOptions);
+    } else if (el.type === 'table') {
+      const tableOptions = {
+        x: el.position.x,
+        y: el.position.y,
+        w: el.position.w,
+        h: el.position.h
+      };
+      if (el.colW && el.colW.length) {
+        tableOptions.colW = el.colW;
+        delete tableOptions.w;
+      }
+      if (el.rowH && el.rowH.length) {
+        tableOptions.rowH = el.rowH;
+        delete tableOptions.h;
+      }
+      targetSlide.addTable(el.rows, tableOptions);
     } else {
       // Check if text is single-line (height suggests one line)
       const lineHeight = el.style.lineSpacing || el.style.fontSize * 1.2;
@@ -376,7 +438,7 @@ function addElements(slideData, targetSlide, pres) {
         bold: el.style.bold,
         italic: el.style.italic,
         underline: el.style.underline,
-        valign: 'top',
+        valign: el.style.valign || 'top',
         lineSpacing: el.style.lineSpacing,
         paraSpaceBefore: el.style.paraSpaceBefore,
         paraSpaceAfter: el.style.paraSpaceAfter,
@@ -610,11 +672,17 @@ async function extractSlideData(page) {
             || node.tagName === 'STRONG'
             || node.tagName === 'I'
             || node.tagName === 'EM'
-            || node.tagName === 'U';
+            || node.tagName === 'U'
+            || node.tagName === 'CODE';
+          const display = computed.display;
           const allowInlineBreak = allowBlock
-            && node.style.display
-            && !node.style.display.startsWith('inline')
-            && node.style.display !== 'contents';
+            && display
+            && !display.startsWith('inline')
+            && display !== 'contents';
+          const isLayoutContainer = display === 'grid'
+            || display === 'inline-grid'
+            || display === 'flex'
+            || display === 'inline-flex';
           if (isInlineTag) {
             const isBold = computed.fontWeight === 'bold' || parseInt(computed.fontWeight) >= 600;
             if (isBold && !shouldSkipBold(computed.fontFamily)) options.bold = true;
@@ -640,12 +708,7 @@ async function extractSlideData(page) {
             if (computed.marginRight && parseFloat(computed.marginRight) > 0) {
               errors.push(`Inline element <${node.tagName.toLowerCase()}> has margin-right which is not supported in PowerPoint. Remove margin from inline elements.`);
             }
-            if (computed.marginTop && parseFloat(computed.marginTop) > 0) {
-              errors.push(`Inline element <${node.tagName.toLowerCase()}> has margin-top which is not supported in PowerPoint. Remove margin from inline elements.`);
-            }
-            if (computed.marginBottom && parseFloat(computed.marginBottom) > 0) {
-              errors.push(`Inline element <${node.tagName.toLowerCase()}> has margin-bottom which is not supported in PowerPoint. Remove margin from inline elements.`);
-            }
+            // Inline elements don't meaningfully support vertical margins in PPT or HTML; ignore margin-top/bottom.
 
             const beforeLen = runs.length;
             // Recursively process the child node. This will flatten nested spans into multiple runs.
@@ -654,6 +717,7 @@ async function extractSlideData(page) {
               runs[runs.length - 1].options.breakLine = true;
             }
           } else if (allowBlock) {
+            if (isLayoutContainer) return;
             const isBlockLike = computed.display && !computed.display.startsWith('inline') && computed.display !== 'contents';
             const beforeLen = runs.length;
             parseInlineFormatting(node, baseOptions, runs, textTransform, allowBlock);
@@ -674,6 +738,38 @@ async function extractSlideData(page) {
       }
 
       return runs.filter(r => r.text.length > 0);
+    };
+
+    const buildTableDimensions = (tableEl, tableRect) => {
+      const colWidthsPx = [];
+      const rowHeightsPx = [];
+
+      const firstRow = tableEl.querySelector('tr');
+      if (firstRow) {
+        Array.from(firstRow.cells).forEach((cell) => {
+          const cellRect = cell.getBoundingClientRect();
+          const colspan = Number(cell.getAttribute('colspan')) || 1;
+          const colWidth = cellRect.width / colspan;
+          for (let i = 0; i < colspan; i += 1) {
+            colWidthsPx.push(colWidth);
+          }
+        });
+      }
+
+      Array.from(tableEl.querySelectorAll('tr')).forEach((row) => {
+        const rowRect = row.getBoundingClientRect();
+        rowHeightsPx.push(rowRect.height);
+      });
+
+      const totalColWidth = colWidthsPx.reduce((sum, w) => sum + w, 0);
+      const totalRowHeight = rowHeightsPx.reduce((sum, h) => sum + h, 0);
+      const colScale = totalColWidth > 0 ? tableRect.width / totalColWidth : 1;
+      const rowScale = totalRowHeight > 0 ? tableRect.height / totalRowHeight : 1;
+
+      return {
+        colW: colWidthsPx.map((w) => pxToInch(w * colScale)),
+        rowH: rowHeightsPx.map((h) => pxToInch(h * rowScale))
+      };
     };
 
     // Extract background from body (image or color)
@@ -709,9 +805,105 @@ async function extractSlideData(page) {
     const placeholders = [];
     const textTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI'];
     const processed = new Set();
+    const markProcessed = (root) => {
+      processed.add(root);
+      root.querySelectorAll('*').forEach((child) => processed.add(child));
+    };
+    const markProcessedList = (root) => {
+      processed.add(root);
+      root.querySelectorAll('*').forEach((child) => processed.add(child));
+    };
+    const INLINE_TEXT_TAGS = new Set(['SPAN', 'B', 'STRONG', 'I', 'EM', 'U', 'CODE', 'BR', 'SMALL', 'SUP', 'SUB', 'A']);
+    const isLayoutDisplay = (display) => display === 'grid'
+      || display === 'inline-grid'
+      || display === 'flex'
+      || display === 'inline-flex';
+    const buildInlineTextElement = (el, rect, computed) => {
+      const rotation = getRotation(computed.transform, computed.writingMode);
+      const { x, y, w, h } = getPositionAndSize(el, rect, rotation);
+      const isFlex = computed.display === 'flex' || computed.display === 'inline-flex';
+      const justifyCenter = isFlex && computed.justifyContent === 'center';
+      const alignCenter = isFlex && computed.alignItems === 'center';
+      const baseStyle = {
+        fontSize: pxToPoints(computed.fontSize),
+        fontFace: computed.fontFamily.split(',')[0].replace(/['"]/g, '').trim(),
+        color: rgbToHex(computed.color),
+        align: justifyCenter ? 'center' : (computed.textAlign === 'start' ? 'left' : computed.textAlign),
+        lineSpacing: computed.lineHeight && computed.lineHeight !== 'normal' ? pxToPoints(computed.lineHeight) : null,
+        paraSpaceBefore: pxToPoints(computed.marginTop),
+        paraSpaceAfter: pxToPoints(computed.marginBottom),
+        // PptxGenJS margin array is [left, right, bottom, top]
+        margin: [
+          pxToPoints(computed.paddingLeft),
+          pxToPoints(computed.paddingRight),
+          pxToPoints(computed.paddingBottom),
+          pxToPoints(computed.paddingTop)
+        ],
+        valign: alignCenter ? 'middle' : null
+      };
+
+      const transparency = extractAlpha(computed.color);
+      if (transparency !== null) baseStyle.transparency = transparency;
+
+      if (rotation !== null) baseStyle.rotate = rotation;
+
+      const hasFormatting = el.querySelector('b, i, u, strong, em, span, br, code');
+      const transformStr = computed.textTransform;
+      if (hasFormatting) {
+        const runs = parseInlineFormatting(el, {}, [], (str) => applyTextTransform(str, transformStr), true);
+        if (runs.length === 0) return null;
+        if (baseStyle.lineSpacing) {
+          const maxFontSize = Math.max(
+            baseStyle.fontSize,
+            ...runs.map(r => r.options?.fontSize || 0)
+          );
+          if (maxFontSize > baseStyle.fontSize) {
+            const lineHeightMultiplier = baseStyle.lineSpacing / baseStyle.fontSize;
+            baseStyle.lineSpacing = maxFontSize * lineHeightMultiplier;
+          }
+        }
+        return {
+          type: 'div',
+          text: runs,
+          position: { x: pxToInch(x), y: pxToInch(y), w: pxToInch(w), h: pxToInch(h) },
+          style: baseStyle
+        };
+      }
+
+      const transformedText = applyTextTransform(el.textContent.trim(), transformStr);
+      if (!transformedText) return null;
+      const isBold = computed.fontWeight === 'bold' || parseInt(computed.fontWeight) >= 600;
+      return {
+        type: 'div',
+        text: transformedText,
+        position: { x: pxToInch(x), y: pxToInch(y), w: pxToInch(w), h: pxToInch(h) },
+        style: {
+          ...baseStyle,
+          bold: isBold && !shouldSkipBold(computed.fontFamily),
+          italic: computed.fontStyle === 'italic',
+          underline: computed.textDecoration.includes('underline')
+        }
+      };
+    };
 
     document.querySelectorAll('*').forEach((el) => {
       if (processed.has(el)) return;
+
+      // Validate: Pseudo-elements are not supported by PowerPoint extraction
+      const beforeStyle = window.getComputedStyle(el, '::before');
+      const afterStyle = window.getComputedStyle(el, '::after');
+      const hasBefore = beforeStyle && beforeStyle.content && beforeStyle.content !== 'none' && beforeStyle.content !== 'normal';
+      const hasAfter = afterStyle && afterStyle.content && afterStyle.content !== 'none' && afterStyle.content !== 'normal';
+      if (hasBefore || hasAfter) {
+        const pseudoParts = [];
+        if (hasBefore) pseudoParts.push('::before');
+        if (hasAfter) pseudoParts.push('::after');
+        errors.push(
+          `Element <${el.tagName.toLowerCase()}> uses ${pseudoParts.join(' and ')} which is not supported. ` +
+          'Move pseudo-element content into real DOM nodes.'
+        );
+        return;
+      }
 
       // Validate text elements don't have backgrounds, borders, or shadows
       if (textTags.includes(el.tagName)) {
@@ -735,7 +927,7 @@ async function extractSlideData(page) {
       }
 
       // Extract placeholder elements (for charts, etc.)
-      if (el.className && el.className.includes('placeholder')) {
+      if (el.className && el.className.includes('placeholder') && el.tagName !== 'TABLE') {
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) {
           errors.push(
@@ -776,6 +968,179 @@ async function extractSlideData(page) {
           });
           processed.add(el);
           return;
+        }
+      }
+
+      // Extract inline SVG as rasterized image
+      if (el.tagName === 'SVG') {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const serializer = new XMLSerializer();
+          const svgMarkup = serializer.serializeToString(el);
+          elements.push({
+            type: 'svg',
+            svg: svgMarkup,
+            position: {
+              x: pxToInch(rect.left),
+              y: pxToInch(rect.top),
+              w: pxToInch(rect.width),
+              h: pxToInch(rect.height)
+            }
+          });
+          markProcessed(el);
+          return;
+        }
+      }
+
+      // Extract flex/grid child spans as independent text elements
+      if (el.tagName === 'SPAN') {
+        const parent = el.parentElement;
+        if (parent) {
+          const parentDisplay = window.getComputedStyle(parent).display;
+          if (isLayoutDisplay(parentDisplay)) {
+            const textAncestor = el.closest('p,h1,h2,h3,h4,h5,h6,li,ul,ol');
+            if (textAncestor) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && el.textContent.trim()) {
+              const computed = window.getComputedStyle(el);
+              const textElement = buildInlineTextElement(el, rect, computed);
+              if (textElement) elements.push(textElement);
+              processed.add(el);
+              return;
+            }
+          }
+        }
+      }
+
+      // Extract tables
+      if (el.tagName === 'TABLE') {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          markProcessed(el);
+          return;
+        }
+
+        const rows = [];
+
+        Array.from(el.querySelectorAll('tr')).forEach((row) => {
+          const cells = [];
+          Array.from(row.cells).forEach((cell) => {
+            const computed = window.getComputedStyle(cell);
+            const isBold = computed.fontWeight === 'bold' || parseInt(computed.fontWeight) >= 600;
+            const textTransform = computed.textTransform;
+            const hasFormatting = cell.querySelector('b, i, u, strong, em, span, br');
+            const cellText = hasFormatting
+              ? parseInlineFormatting(cell, {}, [], (str) => applyTextTransform(str, textTransform), true)
+              : applyTextTransform(cell.innerText || '', textTransform);
+
+            const cellOptions = {
+              fontSize: pxToPoints(computed.fontSize),
+              fontFace: computed.fontFamily.split(',')[0].replace(/['"]/g, '').trim(),
+              color: rgbToHex(computed.color),
+              bold: isBold && !shouldSkipBold(computed.fontFamily),
+              italic: computed.fontStyle === 'italic',
+              underline: computed.textDecoration.includes('underline'),
+              colspan: Number(cell.getAttribute('colspan')) || null,
+              rowspan: Number(cell.getAttribute('rowspan')) || null
+            };
+
+            const textTransparency = extractAlpha(computed.color);
+            if (textTransparency !== null) cellOptions.transparency = textTransparency;
+
+            const align = computed.textAlign === 'start' ? 'left' : computed.textAlign === 'end' ? 'right' : computed.textAlign;
+            if (['left', 'center', 'right', 'justify'].includes(align)) cellOptions.align = align;
+
+            const valign = computed.verticalAlign;
+            if (['top', 'middle', 'bottom'].includes(valign)) cellOptions.valign = valign;
+
+            if (computed.lineHeight && computed.lineHeight !== 'normal') {
+              cellOptions.lineSpacing = pxToPoints(computed.lineHeight);
+            }
+
+            const paddingTop = pxToPoints(computed.paddingTop);
+            const paddingRight = pxToPoints(computed.paddingRight);
+            const paddingBottom = pxToPoints(computed.paddingBottom);
+            const paddingLeft = pxToPoints(computed.paddingLeft);
+            if (paddingTop || paddingRight || paddingBottom || paddingLeft) {
+              cellOptions.margin = [paddingTop, paddingRight, paddingBottom, paddingLeft];
+            }
+
+            const bgColor = rgbToHex(computed.backgroundColor);
+            const bgTransparency = extractAlpha(computed.backgroundColor);
+            if (bgColor) {
+              cellOptions.fill = { color: bgColor };
+              if (bgTransparency !== null) cellOptions.fill.transparency = bgTransparency;
+            }
+
+            const borderTop = pxToPoints(computed.borderTopWidth);
+            const borderRight = pxToPoints(computed.borderRightWidth);
+            const borderBottom = pxToPoints(computed.borderBottomWidth);
+            const borderLeft = pxToPoints(computed.borderLeftWidth);
+            if (borderTop || borderRight || borderBottom || borderLeft) {
+              cellOptions.border = [
+                borderTop ? { pt: borderTop, color: rgbToHex(computed.borderTopColor) } : null,
+                borderRight ? { pt: borderRight, color: rgbToHex(computed.borderRightColor) } : null,
+                borderBottom ? { pt: borderBottom, color: rgbToHex(computed.borderBottomColor) } : null,
+                borderLeft ? { pt: borderLeft, color: rgbToHex(computed.borderLeftColor) } : null
+              ];
+            }
+
+            cells.push({ text: cellText, options: cellOptions });
+          });
+          rows.push(cells);
+        });
+
+        const hasCells = rows.some((row) => row.length > 0);
+        if (!hasCells) {
+          errors.push(`Table "${el.id || 'unnamed'}" has no cells. Check the HTML structure.`);
+          markProcessed(el);
+          return;
+        }
+
+        const { colW, rowH } = buildTableDimensions(el, rect);
+
+        elements.push({
+          type: 'table',
+          rows,
+          position: {
+            x: pxToInch(rect.left),
+            y: pxToInch(rect.top),
+            w: pxToInch(rect.width),
+            h: pxToInch(rect.height)
+          },
+          colW,
+          rowH
+        });
+
+        markProcessed(el);
+        return;
+      }
+
+      // Extract inline text-only DIVs
+      if (el.tagName === 'DIV') {
+        const computed = window.getComputedStyle(el);
+        const hasBg = computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)';
+        const bgImage = computed.backgroundImage;
+        const hasBgImage = bgImage && bgImage !== 'none';
+        const hasBorder = (computed.borderWidth && parseFloat(computed.borderWidth) > 0) ||
+                          (computed.borderTopWidth && parseFloat(computed.borderTopWidth) > 0) ||
+                          (computed.borderRightWidth && parseFloat(computed.borderRightWidth) > 0) ||
+                          (computed.borderBottomWidth && parseFloat(computed.borderBottomWidth) > 0) ||
+                          (computed.borderLeftWidth && parseFloat(computed.borderLeftWidth) > 0);
+        const hasShadow = computed.boxShadow && computed.boxShadow !== 'none';
+        const hasOnlyInlineChildren = Array.from(el.children)
+          .every((child) => INLINE_TEXT_TAGS.has(child.tagName));
+        const hasText = el.textContent && el.textContent.trim();
+
+        const isLayoutContainer = isLayoutDisplay(computed.display);
+        if (!hasBg && !hasBgImage && !hasBorder && !hasShadow && hasOnlyInlineChildren && hasText && !isLayoutContainer) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const textElement = buildInlineTextElement(el, rect, computed);
+            if (textElement) elements.push(textElement);
+            markProcessed(el);
+            return;
+          }
         }
       }
 
@@ -932,6 +1297,16 @@ async function extractSlideData(page) {
             // Add border lines
             elements.push(...borderLines);
 
+            const hasOnlyInlineChildren = Array.from(el.children)
+              .every((child) => INLINE_TEXT_TAGS.has(child.tagName));
+            const hasText = el.textContent && el.textContent.trim();
+            if (hasOnlyInlineChildren && hasText) {
+              const textElement = buildInlineTextElement(el, rect, computed);
+              if (textElement) elements.push(textElement);
+              markProcessed(el);
+              return;
+            }
+
             processed.add(el);
             return;
           }
@@ -940,12 +1315,16 @@ async function extractSlideData(page) {
 
       // Extract bullet lists as single text block
       if (el.tagName === 'UL' || el.tagName === 'OL') {
+        const ulComputed = window.getComputedStyle(el);
+        if (isLayoutDisplay(ulComputed.display)) {
+          processed.add(el);
+          return;
+        }
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
 
         const liElements = Array.from(el.querySelectorAll('li'));
         const items = [];
-        const ulComputed = window.getComputedStyle(el);
         const ulPaddingLeftPt = pxToPoints(ulComputed.paddingLeft);
         const listStyleType = ulComputed.listStyleType;
         const useBullet = listStyleType !== 'none';
@@ -1000,8 +1379,7 @@ async function extractSlideData(page) {
           }
         });
 
-        liElements.forEach(li => processed.add(li));
-        processed.add(el);
+        markProcessedList(el);
         return;
       }
 
@@ -1052,7 +1430,7 @@ async function extractSlideData(page) {
       if (hasFormatting) {
         // Text with inline formatting
         const transformStr = computed.textTransform;
-      const runs = parseInlineFormatting(el, {}, [], (str) => applyTextTransform(str, transformStr), false);
+        const runs = parseInlineFormatting(el, {}, [], (str) => applyTextTransform(str, transformStr), false);
 
         // Adjust lineSpacing based on largest fontSize in runs
         const adjustedStyle = { ...baseStyle };
@@ -1141,6 +1519,15 @@ async function html2pptx(htmlFile, pres, options = {}) {
       await browser.close();
     }
 
+    const resolveImagePath = (src) => {
+      if (!src || typeof src !== 'string') return null;
+      if (src.startsWith('data:')) return null;
+      if (src.startsWith('http://') || src.startsWith('https://')) return null;
+      if (src.startsWith('file://')) return src.replace('file://', '');
+      if (path.isAbsolute(src)) return src;
+      return path.join(path.dirname(filePath), src);
+    };
+
     // Collect all validation errors
     if (bodyDimensions.errors && bodyDimensions.errors.length > 0) {
       validationErrors.push(...bodyDimensions.errors);
@@ -1158,6 +1545,21 @@ async function html2pptx(htmlFile, pres, options = {}) {
 
     if (slideData.errors && slideData.errors.length > 0) {
       validationErrors.push(...slideData.errors);
+    }
+
+    const backgroundPath = slideData.background?.type === 'image'
+      ? resolveImagePath(slideData.background.path)
+      : null;
+    if (backgroundPath && !fs.existsSync(backgroundPath)) {
+      validationErrors.push(`Background image not found: ${backgroundPath}`);
+    }
+
+    for (const el of slideData.elements) {
+      if (el.type !== 'image') continue;
+      const imagePath = resolveImagePath(el.src);
+      if (imagePath && !fs.existsSync(imagePath)) {
+        validationErrors.push(`Image not found: ${imagePath}`);
+      }
     }
 
     // Throw all errors at once if any exist
